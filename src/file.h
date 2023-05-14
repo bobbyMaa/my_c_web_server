@@ -1,12 +1,12 @@
 #ifndef _FILELS_H_ // This was just _FILE_H_, but that interfered with Cygwin
 #define _FILELS_H_
-
-struct file_data {
+#define MAX_FILE_TYPE 255
+typedef struct {
     int size;
     void *data;
-};
+} file_data;
 
-extern struct file_data *file_load(char *filename);
-extern void file_free(struct file_data *filedata);
+extern file_data *file_load(char *filename);
+extern void file_free(file_data *filedata);
 
 #endif

@@ -131,8 +131,8 @@ cache *cache_create(int max_size, int hashsize)
     the_cache->cur_size = 0;
     the_cache->head = NULL;
     the_cache->tail = NULL;
-    struct hashtable *hash = hashtable_create(hashsize, NULL);
-    if (hash == NULL) {
+    the_cache->index = hashtable_create(hashsize, NULL);
+    if (the_cache->index == NULL) {
         perror("cache create hashtable failed");
         free(the_cache);
         return NULL;
@@ -188,5 +188,8 @@ void cache_put(cache *cache, char *path, char *content_type, void *content, int 
 cache_entry *cache_get(cache *cache, char *path)
 {
     cache_entry *entry = hashtable_get(cache->index, path);
+    if (entry != NULL) {
+        dllist_move_to_head(cache, entry);
+    }
     return entry;
 }

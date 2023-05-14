@@ -29,6 +29,7 @@
 #include <time.h>
 #include <sys/file.h>
 #include <fcntl.h>
+#include "threadpool.h"
 #include "net.h"
 #include "file.h"
 #include "mime.h"
@@ -38,9 +39,14 @@
 
 #define SERVER_FILES "./serverfiles"
 #define SERVER_ROOT "./serverroot"
+#define DEFAULT_PAGE "./serverroot/index.html"
 /* 目前只处理两种请求，request和post */
 #define REQUEST_NUM 2
 
+typedef struct {
+    int fd;
+    cache *cache;
+} handle_request_args;
 /**
  * Send an HTTP response
  *
@@ -123,7 +129,7 @@ void get_d20(int fd)
 void resp_404(int fd)
 {
     char filepath[4096];
-    struct file_data *filedata; 
+    file_data *filedata; 
     char *mime_type;
 
     // Fetch the 404.html file
@@ -148,7 +154,22 @@ void resp_404(int fd)
  */
 void get_file(int fd, cache *cache, char *request_path)
 {
-    
+    cache_entry *entry = cache_get(cache, request_path);
+    char *real_path = request_path;
+    if (entry == NULL) {
+        file_data *file = file_load(request_path);
+        if (file == NULL) {
+            file = file_load(DEFAULT_PAGE);
+            real_path = DEFAULT_PAGE;
+        }
+        char *content_type = mime_type_get(real_path);
+        cache_put(cache, real_path, content_type, file->data, file->size);
+        send_response(fd, "HTTP/1.1 200 OK", content_type, file->data, file->size);
+        return;
+    }
+    send_response(fd, "HTTP/1.1 200 OK", entry->content_type, entry->content,
+                  entry->content_length);
+    return;
 }
 
 /**
@@ -168,14 +189,16 @@ char *find_start_of_body(char *header)
  * Handle HTTP request and send response
  */
 
-void handle_http_request(int fd, cache *cache)
+void handle_http_request(void *args)
 {
     const int request_buffer_size = 65536; // 64K
     char request[request_buffer_size];
-
+    handle_request_args *args_real = (handle_request_args *)args;
+    int fd = args_real->fd;
+    cache *cache = args_real->cache;
     // Read request
     int bytes_recvd = recv(fd, request, request_buffer_size - 1, 0);
-
+    printf("recv fd%d bytes_recvd = %d\n", fd, bytes_recvd);
     if (bytes_recvd < 0) {
         perror("recv");
         return;
@@ -188,9 +211,23 @@ void handle_http_request(int fd, cache *cache)
         if (strncmp(request_type, "GET", strlen(request_type)) == 0) {
             if ((strlen(request_file) == strlen("/d20")) &&
                 (strncmp(request_file, "/d20", strlen(request_file)) == 0)) {
-                return get_d20(fd);
+                get_d20(fd);
+                printf("--------------------------------------\n");
+                printf("close fd : %d\n", fd);
+                printf("finish task\nrequest type: %s\nrequest file: %s\n", request_type,
+                                                                            request_file);
+                printf("--------------------------------------\n");
+                close(fd);
+                return;
             } else {
-                return get_file(fd, cache, request_file);
+                get_file(fd, cache, request_file);
+                printf("--------------------------------------\n");
+                printf("close fd : %d\n", fd);
+                printf("finish task\nrequest type: %s\nrequest file: %s\n", request_type,
+                                                                            request_file);
+                printf("--------------------------------------\n");
+                close(fd);
+                return;
             }
         }
         if (strncmp(request_type, "POST", strlen(request_type)) == 0) {
@@ -218,7 +255,9 @@ int main(void)
     char s[INET6_ADDRSTRLEN];
 
     cache *cache = cache_create(10, 0);
-
+    printf("--------------------------------------\n");
+    thread_pool *threadpool = create_threadpool(10);
+    printf("--------------------------------------\n");
     // Get a listening socket
     int listenfd = get_listener_socket(PORT);
 
@@ -232,7 +271,7 @@ int main(void)
     // This is the main loop that accepts incoming connections and
     // responds to the request. The main parent process
     // then goes back to waiting for new connections.
-    
+    int add_task_res = 0;
     while(1) {
         socklen_t sin_size = sizeof their_addr;
 
@@ -243,22 +282,25 @@ int main(void)
             perror("accept");
             continue;
         }
+        printf("--------------------------------------\n");
         // Print out a message that we got the connection
         inet_ntop(their_addr.ss_family,
             get_in_addr((struct sockaddr *)&their_addr),
             s, sizeof s);
-        printf("server: got connection from %s\n", s);
+        printf("fd is %d\nserver: got connection from %s\n", newfd, s);
         
         // newfd is a new socket descriptor for the new connection.
         // listenfd is still listening for new connections.
-
-        handle_http_request(newfd, cache);
-
-        close(newfd);
+        tpool_task task;
+        task.task_routine = (void *)handle_http_request;
+        handle_request_args args = {
+            newfd, cache
+        };
+        task.args = (void *)&args;
+        add_task_res = add_task_in_threadpool(threadpool, &task);
     }
 
     // Unreachable code
 
     return 0;
 }
-

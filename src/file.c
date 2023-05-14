@@ -8,7 +8,7 @@
  * 
  * Buffer is not NUL-terminated.
  */
-struct file_data *file_load(char *filename)
+file_data *file_load(char *filename)
 {
     char *buffer, *p;
     struct stat buf;
@@ -52,7 +52,7 @@ struct file_data *file_load(char *filename)
     }
 
     // Allocate the file data struct
-    struct file_data *filedata = malloc(sizeof *filedata);
+    file_data *filedata = malloc(sizeof *filedata);
 
     if (filedata == NULL) {
         free(buffer);
@@ -68,7 +68,7 @@ struct file_data *file_load(char *filename)
 /**
  * Frees memory allocated by file_load().
  */
-void file_free(struct file_data *filedata)
+void file_free(file_data *filedata)
 {
     free(filedata->data);
     free(filedata);

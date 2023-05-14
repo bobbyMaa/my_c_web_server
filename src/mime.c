@@ -28,8 +28,9 @@ char *mime_type_get(char *filename)
     }
     
     ext++;
-
-    strlower(ext);
+    char temp[5];
+    strncpy(temp, ext, strlen(ext) + 1);
+    strlower(temp);
 
     // TODO: this is O(n) and it should be O(1)
 
